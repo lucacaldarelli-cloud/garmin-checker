@@ -44,32 +44,40 @@ jobs:
               client = Garmin(email, password)
               client.login()
 
-              today = date.today()
-              stats = client.get_user_summary(today.isoformat()) or {}
+              today_str = date.today().isoformat()
               
+              # Fetch Dati
+              user_summary = client.get_user_summary(today_str) or {}
+              
+              # Sonno
               try:
-                  sleep = client.get_sleep_data(today.isoformat()) or {}
+                  sleep_data = client.get_sleep_data(today_str) or {}
+                  daily_sleep = sleep_data.get('dailySleepDTO', {}) or {}
+                  sleep_seconds = daily_sleep.get('sleepTimeSeconds')
+                  sleep_duration = f"{sleep_seconds // 3600}h {(sleep_seconds % 3600) // 60}m" if sleep_seconds else "N/D"
+                  sleep_score = daily_sleep.get('sleepScores', {}).get('overall', {}).get('value', 'N/D')
               except:
-                  sleep = {}
+                  sleep_duration, sleep_score = "N/D", "N/D"
 
-              daily_sleep = sleep.get('dailySleepDTO', {}) or {}
-              sleep_seconds = daily_sleep.get('sleepTimeSeconds')
-              
-              if sleep_seconds is not None:
-                  sleep_duration = sleep_seconds // 3600
-              else:
-                  sleep_duration = "N/D"
+              # Body Battery
+              try:
+                  bb_data = client.get_body_battery(today_str) or []
+                  if bb_data and isinstance(bb_data, list):
+                      # Prende l'ultimo valore registrato nella giornata
+                      body_battery = bb_data[-1].get('chargedValues', 'N/D')
+                  else:
+                      body_battery = user_summary.get('bodyBatteryMostRecentValue', 'N/D')
+              except:
+                  body_battery = user_summary.get('bodyBatteryMostRecentValue', 'N/D')
 
-              sleep_scores = daily_sleep.get('sleepScores', {}) or {}
-              overall_score = sleep_scores.get('overall', {}) or {}
-              sleep_score = overall_score.get('value', 'N/D')
-
-              body_battery = stats.get('bodyBatteryMostRecentValue', 'N/D')
-              stress_avg = stats.get('averageStressLevel', 'N/D')
+              # Stress
+              stress_avg = user_summary.get('averageStressLevel', 'N/D')
+              if stress_avg == -1 or stress_avg is None:
+                  stress_avg = "N/D"
 
               text = (
                   "📊 *Riepilogo Garmin Domenicale*\n\n"
-                  f"💤 *Sonno:* {sleep_duration} ore (Punteggio: {sleep_score})\n"
+                  f"💤 *Sonno:* {sleep_duration} (Punteggio: {sleep_score})\n"
                   f"🔋 *Body Battery:* {body_battery}\n"
                   f"🧘 *Stress Medio:* {stress_avg}\n\n"
                   "👉 Copia questo testo e incollalo nel check-in dell'agente!"
