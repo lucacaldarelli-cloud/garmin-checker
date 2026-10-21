@@ -46,10 +46,21 @@ jobs:
 
               today_str = date.today().isoformat()
               
-              # Fetch Dati
+              # 1. Sommario Giornaliero (FC, Stress, Passi)
               user_summary = client.get_user_summary(today_str) or {}
               
-              # Sonno
+              # Frequenza Cardiaca
+              hr_rest = user_summary.get('restingHeartRate', 'N/D')
+              hr_max = user_summary.get('maxHeartRate', 'N/D')
+              
+              # Stress & Body Battery
+              stress_avg = user_summary.get('averageStressLevel')
+              if stress_avg is None or stress_avg == -1:
+                  stress_avg = "N/D"
+                  
+              body_battery = user_summary.get('bodyBatteryMostRecentValue', 'N/D')
+
+              # 2. Sonno
               try:
                   sleep_data = client.get_sleep_data(today_str) or {}
                   daily_sleep = sleep_data.get('dailySleepDTO', {}) or {}
@@ -59,27 +70,31 @@ jobs:
               except:
                   sleep_duration, sleep_score = "N/D", "N/D"
 
-              # Body Battery
+              # 3. Attività e Esercizio Fisico del giorno
+              activities_text = ""
               try:
-                  bb_data = client.get_body_battery(today_str) or []
-                  if bb_data and isinstance(bb_data, list):
-                      # Prende l'ultimo valore registrato nella giornata
-                      body_battery = bb_data[-1].get('chargedValues', 'N/D')
+                  activities = client.get_activities_by_date(today_str, today_str, "") or []
+                  if activities:
+                      for act in activities:
+                          name = act.get('activityName', 'Allenamento')
+                          type_key = act.get('activityType', {}).get('typeKey', 'Sport')
+                          duration_min = int(act.get('duration', 0) // 60)
+                          avg_hr = act.get('averageHR', 'N/D')
+                          calories = act.get('calories', 'N/D')
+                          activities_text += f"• *{name}* ({type_key}): {duration_min} min | FC media: {avg_hr} bpm | {calories} kcal\n"
                   else:
-                      body_battery = user_summary.get('bodyBatteryMostRecentValue', 'N/D')
-              except:
-                  body_battery = user_summary.get('bodyBatteryMostRecentValue', 'N/D')
+                      activities_text = "Nessuna attività registrata oggi.\n"
+              except Exception as e:
+                  activities_text = "Impossibile recuperare le attività.\n"
 
-              # Stress
-              stress_avg = user_summary.get('averageStressLevel', 'N/D')
-              if stress_avg == -1 or stress_avg is None:
-                  stress_avg = "N/D"
-
+              # Costruzione Messaggio Telegram
               text = (
                   "📊 *Riepilogo Garmin Domenicale*\n\n"
                   f"💤 *Sonno:* {sleep_duration} (Punteggio: {sleep_score})\n"
                   f"🔋 *Body Battery:* {body_battery}\n"
-                  f"🧘 *Stress Medio:* {stress_avg}\n\n"
+                  f"🧘 *Stress Medio:* {stress_avg}\n"
+                  f"❤️ *Frequenza Cardiaca:* Riposo {hr_rest} bpm | Max {hr_max} bpm\n\n"
+                  f"🏃‍♂️ *Attività Fisiche:*\n{activities_text}\n"
                   "👉 Copia questo testo e incollalo nel check-in dell'agente!"
               )
 
