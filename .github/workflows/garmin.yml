@@ -2,19 +2,18 @@ name: Garmin Weekly Report
 
 on:
   schedule:
-    # Esegue ogni domenica alle 19:30 UTC (20:30/21:30 italiane)
     - cron: '30 19 * * 0'
-  workflow_dispatch: # Permette di testarlo manualmente quando vuoi
+  workflow_dispatch:
 
 jobs:
   run-garmin:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
@@ -32,7 +31,7 @@ jobs:
         run: |
           python - << 'EOF'
           import os
-          from datetime import date, timedelta
+          from datetime import date
           import requests
           from garminconnect import Garmin
 
@@ -46,13 +45,27 @@ jobs:
               client.login()
 
               today = date.today()
-              stats = client.get_user_summary(today.isoformat())
-              sleep = client.get_sleep_data(today.isoformat())
+              stats = client.get_user_summary(today.isoformat()) or {}
+              
+              try:
+                  sleep = client.get_sleep_data(today.isoformat()) or {}
+              except:
+                  sleep = {}
 
-              sleep_duration = sleep.get('dailySleepDTO', {}).get('sleepTimeSeconds', 0) // 3600
-              sleep_score = sleep.get('dailySleepDTO', {}).get('sleepScores', {}).get('overall', {}).get('value', 'N/A')
-              body_battery = stats.get('bodyBatteryMostRecentValue', 'N/A')
-              stress_avg = stats.get('averageStressLevel', 'N/A')
+              daily_sleep = sleep.get('dailySleepDTO', {}) or {}
+              sleep_seconds = daily_sleep.get('sleepTimeSeconds')
+              
+              if sleep_seconds is not None:
+                  sleep_duration = sleep_seconds // 3600
+              else:
+                  sleep_duration = "N/D"
+
+              sleep_scores = daily_sleep.get('sleepScores', {}) or {}
+              overall_score = sleep_scores.get('overall', {}) or {}
+              sleep_score = overall_score.get('value', 'N/D')
+
+              body_battery = stats.get('bodyBatteryMostRecentValue', 'N/D')
+              stress_avg = stats.get('averageStressLevel', 'N/D')
 
               text = (
                   "📊 *Riepilogo Garmin Domenicale*\n\n"
