@@ -1,0 +1,73 @@
+name: Garmin Weekly Report
+
+on:
+  schedule:
+    # Esegue ogni domenica alle 19:30 UTC (20:30/21:30 italiane)
+    - cron: '30 19 * * 0'
+  workflow_dispatch: # Permette di testarlo manualmente quando vuoi
+
+jobs:
+  run-garmin:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install garminconnect requests
+
+      - name: Fetch Garmin Data and Send Telegram Message
+        env:
+          GARMIN_EMAIL: ${{ secrets.GARMIN_EMAIL }}
+          GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python - << 'EOF'
+          import os
+          from datetime import date, timedelta
+          import requests
+          from garminconnect import Garmin
+
+          email = os.environ['GARMIN_EMAIL']
+          password = os.environ['GARMIN_PASSWORD']
+          token = os.environ['TELEGRAM_TOKEN']
+          chat_id = os.environ['TELEGRAM_CHAT_ID']
+
+          try:
+              client = Garmin(email, password)
+              client.login()
+
+              today = date.today()
+              stats = client.get_user_summary(today.isoformat())
+              sleep = client.get_sleep_data(today.isoformat())
+
+              sleep_duration = sleep.get('dailySleepDTO', {}).get('sleepTimeSeconds', 0) // 3600
+              sleep_score = sleep.get('dailySleepDTO', {}).get('sleepScores', {}).get('overall', {}).get('value', 'N/A')
+              body_battery = stats.get('bodyBatteryMostRecentValue', 'N/A')
+              stress_avg = stats.get('averageStressLevel', 'N/A')
+
+              text = (
+                  "📊 *Riepilogo Garmin Domenicale*\n\n"
+                  f"💤 *Sonno:* {sleep_duration} ore (Punteggio: {sleep_score})\n"
+                  f"🔋 *Body Battery:* {body_battery}\n"
+                  f"🧘 *Stress Medio:* {stress_avg}\n\n"
+                  "👉 Copia questo testo e incollalo nel check-in dell'agente!"
+              )
+
+              url = f"https://api.telegram.org/bot{token}/sendMessage"
+              requests.post(url, json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"})
+              print("Messaggio inviato con successo!")
+
+          except Exception as e:
+              print(f"Errore: {e}")
+              url = f"https://api.telegram.org/bot{token}/sendMessage"
+              requests.post(url, json={"chat_id": chat_id, "text": f"Errore Garmin: {e}"})
+          EOF
